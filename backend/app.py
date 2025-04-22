@@ -4,7 +4,7 @@ from flask_cors import CORS
 import os  
 import requests  
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import datetime, timedelta
 
 load_dotenv()  
 app = Flask(__name__)  
@@ -52,6 +52,43 @@ def get_weather():
         return jsonify({"error": f"OpenWeather API hatası: {str(e)}"}), 502
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/weekly_avg', methods=['GET'])
+def weekly_avg():
+    try:
+        city = request.args.get('city')
+        if not city:
+            return jsonify({"error": "Şehir parametresi gereklidir"}), 400
+        
+        one_week_ago = datetime.now() - timedelta(days=7)
+
+        pipeline = [
+            {"$match": {
+                "city": city.lower(),
+                "timestamp": {"$gte": one_week_ago}
+            }},
+            {"$group": {
+                "_id": {"$dayOfWeek": "$timestamp"},
+                "avgTemp": {"$avg": "$data.main.temp"}
+            }},
+            {"$sort": {"_id": 1}}
+        ]
+
+        results = list(weather_collection.aggregate(pipeline))
+
+        days_tr = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi']
+        for item in results:
+            item['day'] = days_tr[item['_id'] - 1]
+            item['avgTemp'] = round(item['avgTemp'], 1)
+            del item['_id']
+
+        return jsonify(results)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
